@@ -27,6 +27,10 @@ class Embedding(nn.Module):
         # 使用 GloVe/Word2vec embedding 和 CNN char embedding 
         # 来初始化 embedding 层
         # ----------------------------------------------------------------------------------------
+        
+        self.embed = nn.Embedding.from_pretrained(word_vectors)
+        self.conv1 = nn.Conv1d(hidden_size, char_vectors.size(1), num_filters, kernel_size)
+    
         self.proj = nn.Linear(word_vectors.size(1)+448, hidden_size, bias=False) 
         self.hwy = HighwayEncoder(2, hidden_size)
 
@@ -37,8 +41,22 @@ class Embedding(nn.Module):
         # 使用 GloVe/Word2vec embedding 和 CNN char embedding 
         # 来初始化 embedding 层
         # ----------------------------------------------------------------------------------------
+        
+        emb = self.embed(x)   # (batch_size, seq_len, embed_size)
+        
         emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
         emb = F.dropout(emb, self.drop_prob, self.training) # 对 word embedding dropout 就和普通的 dropout 意义一样吗
+        
+        batch_size, sentence_length, max_word_length = char_x.size()
+        c = char_x.contiguous().view(-1, max_word_length)     
+        c = self.char_embed(c)
+        c = F.dropout(c, self.drop_prob, self.training)
+        c_emb = self.cnn(c.permute(0, 2, 1), sentence_length, batch_size) 
+        c_emb_avg = self.avgatt(c_emb) # weighted average char embedding
+        c_emb = torch.cat((c_emb, c_emb_avg), dim=2)
+
+        emb = torch.cat((c_emb, emb), 2)
+
         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
         return emb
 
